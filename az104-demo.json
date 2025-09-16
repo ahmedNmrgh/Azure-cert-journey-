@@ -1,0 +1,846 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.1.0.0",
+  "parameters": {
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "azureuser"
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "defaultValue": "P@ssw0rd1234!"
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B1s",
+      "allowedValues": [
+        "Standard_B1s",
+        "Standard_B2s",
+        "Standard_D2s_v3"
+      ]
+    },
+    "locationUK": {
+      "type": "string",
+      "defaultValue": "uksouth"
+    },
+    "locationNE": {
+      "type": "string",
+      "defaultValue": "northeurope"
+    },
+    "locationUS": {
+      "type": "string",
+      "defaultValue": "eastus"
+    }
+  },
+  "variables": {
+    "storageAccountName": "[concat('az104stor', uniqueString(resourceGroup().id))]",
+    "webVmNames": [
+      "web1-uk",
+      "web2-uk"
+    ],
+    "appVmName": "app-ne",
+    "dbVmName": "db-us"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2022-01-01",
+      "name": "hub-vnet",
+      "location": "[parameters('locationUK')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.0.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "AzureBastionSubnet",
+            "properties": {
+              "addressPrefix": "10.0.1.0/24"
+            }
+          },
+          {
+            "name": "GatewaySubnet",
+            "properties": {
+              "addressPrefix": "10.0.2.0/24"
+            }
+          },
+          {
+            "name": "web-subnet",
+            "properties": {
+              "addressPrefix": "10.0.3.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2022-01-01",
+      "name": "hub-bastion-ip",
+      "location": "[parameters('locationUK')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "type": "Microsoft.Network/bastionHosts",
+      "apiVersion": "2022-01-01",
+      "name": "hub-bastion",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "hub-vnet",
+        "hub-bastion-ip"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "bastion-ipconfig",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','hub-vnet','AzureBastionSubnet')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses','hub-bastion-ip')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('storageAccountName')]",
+      "location": "[parameters('locationUK')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {}
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2022-01-01",
+      "name": "spoke-ne-vnet",
+      "location": "[parameters('locationNE')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.1.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "app-subnet",
+            "properties": {
+              "addressPrefix": "10.1.1.0/24"
+            }
+          },
+          {
+            "name": "appgw-subnet",
+            "properties": {
+              "addressPrefix": "10.1.2.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2022-01-01",
+      "name": "spoke-us-vnet",
+      "location": "[parameters('locationUS')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.2.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "db-subnet",
+            "properties": {
+              "addressPrefix": "10.2.1.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+      "apiVersion": "2022-01-01",
+      "name": "hub-vnet/hub-to-ne",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "hub-vnet",
+        "spoke-ne-vnet"
+      ],
+      "properties": {
+        "remoteVirtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks','spoke-ne-vnet')]"
+        },
+        "allowVirtualNetworkAccess": true,
+        "allowForwardedTraffic": true
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+      "apiVersion": "2022-01-01",
+      "name": "spoke-ne-vnet/ne-to-hub",
+      "location": "[parameters('locationNE')]",
+      "dependsOn": [
+        "hub-vnet",
+        "spoke-ne-vnet"
+      ],
+      "properties": {
+        "remoteVirtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks','hub-vnet')]"
+        },
+        "allowVirtualNetworkAccess": true,
+        "allowForwardedTraffic": true
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+      "apiVersion": "2022-01-01",
+      "name": "hub-vnet/hub-to-us",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "hub-vnet",
+        "spoke-us-vnet"
+      ],
+      "properties": {
+        "remoteVirtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks','spoke-us-vnet')]"
+        },
+        "allowVirtualNetworkAccess": true,
+        "allowForwardedTraffic": true
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+      "apiVersion": "2022-01-01",
+      "name": "spoke-us-vnet/us-to-hub",
+      "location": "[parameters('locationUS')]",
+      "dependsOn": [
+        "hub-vnet",
+        "spoke-us-vnet"
+      ],
+      "properties": {
+        "remoteVirtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks','hub-vnet')]"
+        },
+        "allowVirtualNetworkAccess": true,
+        "allowForwardedTraffic": true
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2022-01-01",
+      "name": "uk-web-lb-pip",
+      "location": "[parameters('locationUK')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "type": "Microsoft.Network/loadBalancers",
+      "apiVersion": "2022-01-01",
+      "name": "uk-web-lb",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "uk-web-lb-pip"
+      ],
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "uk-web-frontend",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses','uk-web-lb-pip')]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "uk-web-backend"
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "name": "http-rule-80",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations','uk-web-lb','uk-web-frontend')]"
+              },
+              "backendAddressPool": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools','uk-web-lb','uk-web-backend')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 80,
+              "backendPort": 80,
+              "enableFloatingIP": false,
+              "idleTimeoutInMinutes": 4,
+              "probe": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/probes','uk-web-lb','tcp-80-probe')]"
+              }
+            }
+          }
+        ],
+        "probes": [
+          {
+            "name": "tcp-80-probe",
+            "properties": {
+              "protocol": "Tcp",
+              "port": 80,
+              "intervalInSeconds": 5,
+              "numberOfProbes": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2022-07-01",
+      "name": "nic-web1-uk",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "hub-vnet",
+        "uk-web-lb"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','hub-vnet','web-subnet')]"
+              },
+              "privateIPAllocationMethod": "Dynamic",
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools','uk-web-lb','uk-web-backend')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2022-07-01",
+      "name": "nic-web2-uk",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "hub-vnet",
+        "uk-web-lb"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','hub-vnet','web-subnet')]"
+              },
+              "privateIPAllocationMethod": "Dynamic",
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools','uk-web-lb','uk-web-backend')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2023-03-01",
+      "name": "web1-uk",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "nic-web1-uk"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "web1-uk",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "0001-com-ubuntu-server-focal",
+            "sku": "20_04-lts",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces','nic-web1-uk')]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2023-03-01",
+      "name": "web2-uk",
+      "location": "[parameters('locationUK')]",
+      "dependsOn": [
+        "nic-web2-uk"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "web2-uk",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "0001-com-ubuntu-server-focal",
+            "sku": "20_04-lts",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces','nic-web2-uk')]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2022-07-01",
+      "name": "nic-app-ne",
+      "location": "[parameters('locationNE')]",
+      "dependsOn": [
+        "spoke-ne-vnet"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','spoke-ne-vnet','app-subnet')]"
+              },
+              "privateIPAllocationMethod": "Dynamic"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2023-03-01",
+      "name": "app-ne",
+      "location": "[parameters('locationNE')]",
+      "dependsOn": [
+        "nic-app-ne"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "app-ne",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "0001-com-ubuntu-server-focal",
+            "sku": "20_04-lts",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces','nic-app-ne')]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2022-01-01",
+      "name": "ne-appgw-pip",
+      "location": "[parameters('locationNE')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "type": "Microsoft.Network/applicationGateways",
+      "apiVersion": "2022-09-01",
+      "name": "ne-appgw-waf",
+      "location": "[parameters('locationNE')]",
+      "dependsOn": [
+        "spoke-ne-vnet",
+        "ne-appgw-pip",
+        "app-ne"
+      ],
+      "sku": {
+        "name": "WAF_v2",
+        "tier": "WAF_v2",
+        "capacity": 1
+      },
+      "properties": {
+        "autoscaleConfiguration": {
+          "minCapacity": 1
+        },
+        "gatewayIPConfigurations": [
+          {
+            "name": "appgw-ipcfg",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','spoke-ne-vnet','appgw-subnet')]"
+              }
+            }
+          }
+        ],
+        "frontendIPConfigurations": [
+          {
+            "name": "appgw-feip",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses','ne-appgw-pip')]"
+              }
+            }
+          }
+        ],
+        "frontendPorts": [
+          {
+            "name": "port-80",
+            "properties": {
+              "port": 80
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "app-backend",
+            "properties": {
+              "backendAddresses": [
+                {
+                  "ipAddress": "[reference(resourceId('Microsoft.Network/networkInterfaces','nic-app-ne'),'2022-07-01').ipConfigurations[0].properties.privateIPAddress]"
+                }
+              ]
+            }
+          }
+        ],
+        "backendHttpSettingsCollection": [
+          {
+            "name": "http-settings",
+            "properties": {
+              "protocol": "Http",
+              "port": 80,
+              "cookieBasedAffinity": "Disabled",
+              "pickHostNameFromBackendAddress": false
+            }
+          }
+        ],
+        "httpListeners": [
+          {
+            "name": "http-listener",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations','ne-appgw-waf','appgw-feip')]"
+              },
+              "frontendPort": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts','ne-appgw-waf','port-80')]"
+              },
+              "protocol": "Http"
+            }
+          }
+        ],
+        "requestRoutingRules": [
+          {
+            "name": "rule1",
+            "properties": {
+              "ruleType": "Basic",
+              "httpListener": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners','ne-appgw-waf','http-listener')]"
+              },
+              "backendAddressPool": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools','ne-appgw-waf','app-backend')]"
+              },
+              "backendHttpSettings": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection','ne-appgw-waf','http-settings')]"
+              }
+            }
+          }
+        ],
+        "webApplicationFirewallConfiguration": {
+          "enabled": true,
+          "firewallMode": "Prevention",
+          "ruleSetType": "OWASP",
+          "ruleSetVersion": "3.2"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2022-07-01",
+      "name": "nic-db-us",
+      "location": "[parameters('locationUS')]",
+      "dependsOn": [
+        "spoke-us-vnet"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','spoke-us-vnet','db-subnet')]"
+              },
+              "privateIPAllocationMethod": "Dynamic"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2023-03-01",
+      "name": "db-us",
+      "location": "[parameters('locationUS')]",
+      "dependsOn": [
+        "nic-db-us"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "db-us",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "0001-com-ubuntu-server-focal",
+            "sku": "20_04-lts",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces','nic-db-us')]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/loadBalancers",
+      "apiVersion": "2022-01-01",
+      "name": "us-db-ilb",
+      "location": "[parameters('locationUS')]",
+      "dependsOn": [
+        "spoke-us-vnet"
+      ],
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "ilb-fe",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','spoke-us-vnet','db-subnet')]"
+              },
+              "privateIPAddress": "10.2.1.10",
+              "privateIPAllocationMethod": "Static"
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "ilb-backend"
+          }
+        ],
+        "probes": [
+          {
+            "name": "tcp-1433",
+            "properties": {
+              "protocol": "Tcp",
+              "port": 1433,
+              "intervalInSeconds": 5,
+              "numberOfProbes": 2
+            }
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "name": "db-1433",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations','us-db-ilb','ilb-fe')]"
+              },
+              "backendAddressPool": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools','us-db-ilb','ilb-backend')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 1433,
+              "backendPort": 1433,
+              "idleTimeoutInMinutes": 4,
+              "enableFloatingIP": false,
+              "probe": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/probes','us-db-ilb','tcp-1433')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2022-07-01",
+      "name": "nic-db-us-ilbUpdate",
+      "location": "[parameters('locationUS')]",
+      "dependsOn": [
+        "us-db-ilb",
+        "nic-db-us"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','spoke-us-vnet','db-subnet')]"
+              },
+              "privateIPAllocationMethod": "Dynamic",
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools','us-db-ilb','ilb-backend')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2020-06-01",
+      "name": "privatelink.blob.core.windows.net",
+      "location": "global",
+      "properties": {}
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2020-06-01",
+      "name": "privatelink.blob.core.windows.net/us-link",
+      "location": "global",
+      "dependsOn": [
+        "spoke-us-vnet",
+        "privatelink.blob.core.windows.net"
+      ],
+      "properties": {
+        "registrationEnabled": false,
+        "virtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks','spoke-us-vnet')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2021-08-01",
+      "name": "us-storage-pe",
+      "location": "[parameters('locationUS')]",
+      "dependsOn": [
+        "spoke-us-vnet",
+        "[variables('storageAccountName')]",
+        "privatelink.blob.core.windows.net",
+        "privatelink.blob.core.windows.net/us-link"
+      ],
+      "properties": {
+        "subnet": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets','spoke-us-vnet','db-subnet')]"
+        },
+        "privateLinkServiceConnections": [
+          {
+            "name": "storage-blob-connection",
+            "properties": {
+              "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+              "groupIds": [
+                "blob"
+              ]
+            }
+          }
+        ],
+        "customDnsConfigs": []
+      }
+    }
+  ],
+  "outputs": {
+    "storageAccountName": {
+      "type": "string",
+      "value": "[variables('storageAccountName')]"
+    },
+    "ukWebLbPublicIP": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses','uk-web-lb-pip')).ipAddress]"
+    },
+    "appGatewayPublicIP": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses','ne-appgw-pip')).ipAddress]"
+    },
+    "ilbAddress": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/loadBalancers','us-db-ilb'),'2022-01-01').frontendIPConfigurations[0].properties.privateIPAddress]"
+    }
+  }
+}
