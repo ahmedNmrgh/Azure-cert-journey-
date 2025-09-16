@@ -61,7 +61,7 @@ To reinforce learning, I created a **hub-and-spoke, multi-region architecture**:
 * **Web Tier** → 2 Linux VMs behind a Public Load Balancer.
 * **Storage with Private Endpoint** → Private DNS + blob access from US subnet.
 
-Template: [`az104-demo-extended.json`](az104-demo-extended.json).
+Template: [`az104-demo.json`](az104-demo.json).
 
 ---
 
