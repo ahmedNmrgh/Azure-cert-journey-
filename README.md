@@ -33,7 +33,10 @@ This post walks you through my weekly routine, the hands-on project I built, and
 * Hands-on: Built **Web Tier VMs behind a Load Balancer** + **Application Gateway with WAF**.
 * Practiced deploying ARM templates from GitLab CI/CD pipeline.
 
-➡️ Goal: Practice exam-level scenarios like secure storage and load balancing.
+➡️ Goal: Practice exam-level scenarios like secure storage and load balancing
+
+##P.S.:
+this exam is purely about how to implemnt not why that's why I'll be moving forward to az-305 (Microsoft Certified: Azure Solutions Architect Expert) and i'll 
 
 ### Week 4 – Monitoring, Backup & Review
 
