@@ -101,3 +101,5 @@ This way, each commit to my GitLab repo could trigger a deployment.
 
 ## P.S.:
 this exam is purely about how to implemnt not why that's why I'll be moving forward to az-305 (Microsoft Certified: Azure Solutions Architect Expert) and i'll start with cloud solutions architect projects 
+
+## P.S. : i earned az305 sc300 and now preparing for az-400 
